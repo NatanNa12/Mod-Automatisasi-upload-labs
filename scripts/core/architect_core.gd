@@ -9,6 +9,7 @@ var auto_collector_unlocked = false
 var is_transitioning = false
 var auto_collector_path = "" 
 var wire_mapper_node = null # Variabel untuk menyimpan modul penyambung kabel
+var time_multiplier = 5.0 # Fitur 41: Mempercepat game 5x lipat
 
 func _ready():
     print("[Natan_Mod] Arsitektur Auto Builder berhasil diinisialisasi.")
@@ -132,3 +133,15 @@ func _reinkarnasi_objek(mesin_manual, data_panen, gudang, batas_asli, peta_kabel
         wire_mapper_node.jahit_kabel_baru(mesin_baru, peta_kabel_ingatan)
     
     print("[Natan_Mod] Sukses mengganti dan menyambung ulang: ", mesin_baru.name)
+    func _tampilkan_notifikasi_visual(pos):
+    var label = Label.new()
+    label.text = "AUTO-DEPLOYED"
+    label.modulate = Color.GREEN
+    get_tree().root.add_child(label)
+    label.global_position = pos
+    
+    # Animasi teks naik lalu hilang
+    var tween = create_tween()
+    tween.tween_property(label, "global_position:y", pos.y - 50, 1.0)
+    tween.tween_property(label, "modulate:a", 0.0, 1.0)
+    tween.tween_callback(label.queue_free)

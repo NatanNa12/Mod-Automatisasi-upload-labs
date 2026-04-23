@@ -56,3 +56,29 @@ func jahit_kabel_baru(mesin_baru, peta_kabel: Dictionary):
                 node_sumber.connect_to_node(mesin_baru, koneksi["from_port"], koneksi["to_port"])
                 
     print("[Natan_WireMapper] Rekoneksi absolut berhasil. Mesin online.")
+    extends Node
+
+# Kamus Penerjemah Port (Jika Port manual 0 harus ke Port otomatis 1)
+var port_map = {
+    0: 0, # Default: Port sama
+    1: 1
+}
+
+func petakan_kabel_lama(mesin_lama) -> Dictionary:
+    var peta_kabel = {"outgoing": [], "incoming": []}
+    
+    if mesin_lama.has_method("get_outgoing_connections"):
+        for kabel in mesin_lama.get_outgoing_connections():
+            if is_instance_valid(kabel.target_node): # [Perbaikan: Celah 3]
+                peta_kabel["outgoing"].append({
+                    "target_node": kabel.target_node,
+                    "from_port": port_map.get(kabel.from_port, 0),
+                    "to_port": kabel.to_port
+                })
+    return peta_kabel
+
+func jahit_kabel_baru(mesin_baru, peta_kabel: Dictionary):
+    for koneksi in peta_kabel["outgoing"]:
+        if is_instance_valid(koneksi["target_node"]):
+            # Menggunakan call_deferred agar koneksi dilakukan setelah node stabil
+            mesin_baru.call_deferred("connect_to_node", koneksi["target_node"], koneksi["from_port"], koneksi["to_port"])
