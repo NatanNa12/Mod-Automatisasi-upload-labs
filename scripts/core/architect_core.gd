@@ -1,17 +1,24 @@
 extends Node
 
 # ==========================================
-# Natan's Auto Builder Mod - Fase 1-3 (Integrated)
-# Modul: Passive Monitor & Adaptive Reconstructor
+# Natan's Auto Builder Mod - Fase 1-4 (Integrated)
+# Modul: Passive Monitor, Reconstructor & Wire Integration
 # ==========================================
 
 var auto_collector_unlocked = false
 var is_transitioning = false
-var auto_collector_path = "" # [Perbaikan 4: Dynamic Pathing]
+var auto_collector_path = "" 
+var wire_mapper_node = null # Variabel untuk menyimpan modul penyambung kabel
 
 func _ready():
     print("[Natan_Mod] Arsitektur Auto Builder berhasil diinisialisasi.")
-    _scan_direktori_auto_collector() # Menjalankan Perbaikan 4 saat start
+    _scan_direktori_auto_collector() 
+    
+    # [INTEGRASI FASE 4]: Memuat modul wire_mapper secara dinamis ke dalam memori
+    var mapper_script = preload("res://scripts/modules/wire_mapper.gd")
+    wire_mapper_node = mapper_script.new()
+    add_child(wire_mapper_node) # Memasukkan saraf kabel ke dalam Scene Tree
+    print("[Natan_Mod] Modul Wire Mapper berhasil di-load dan siap beroperasi.")
 
 func _process(_delta):
     if is_transitioning:
@@ -19,7 +26,6 @@ func _process(_delta):
     if not auto_collector_unlocked:
         _pantau_research_tree()
 
-# [Perbaikan 4]: Mencari file .tscn secara dinamis agar mod tidak rusak jika game update folder
 func _scan_direktori_auto_collector():
     var target_file = "AutoCollector.tscn"
     var folders = ["res://Nodes/", "res://Entities/", "res://Scenes/", "res://Prefabs/"]
@@ -41,27 +47,29 @@ func _pantau_research_tree():
             _inisialisasi_proses_transisi()
 
 func _inisialisasi_proses_transisi():
-    print("[Natan_Mod] Fase 2 & 3 Aktif: Menjalankan Adaptive Pause, Harvest & Replace...")
+    print("[Natan_Mod] Fase 2, 3 & 4 Aktif: Menjalankan Adaptive Pause, Harvest, Replace & Rewire...")
     _proses_eksekusi_total()
 
 func _proses_eksekusi_total():
-    # [Perbaikan 1]: Fallback scan jika grup manual_nodes tidak didefinisikan developer
     var targets = get_tree().get_nodes_in_group("manual_nodes")
     if targets.is_empty():
-        print("[Natan_Mod] Grup manual_nodes kosong, memindai manual via filter nama...")
-        # Mencari semua node di root yang mengandung kata 'Manual'
         for node in get_tree().get_root().get_children():
             if "Manual" in node.name:
                 targets.append(node)
 
     for mesin in targets:
-        # Pause
+        # 1. Pause
         mesin.process_mode = Node.PROCESS_MODE_DISABLED
         
-        # [Perbaikan 2 & 3]: Proteksi Null dan Timeout Kabel (3 detik)
+        # 2. Tunggu Kabel Kosong
         await _tunggu_kabel_bersih(mesin, 3.0)
         
-        # Harvest (Bypass Storage)
+        # [INTEGRASI FASE 4]: 3. Memotret Peta Kabel sebelum mesin dihancurkan
+        var peta_kabel_ingatan = {}
+        if wire_mapper_node:
+            peta_kabel_ingatan = wire_mapper_node.petakan_kabel_lama(mesin)
+        
+        # 4. Harvest (Bypass Storage)
         var batas_asli = 0
         var gudang = null
         if has_node("/root/GlobalDataCenter"):
@@ -73,19 +81,17 @@ func _proses_eksekusi_total():
         if "internal_storage" in mesin:
             data_panen = mesin.internal_storage
         
-        # Reinkarnasi (Fase 3)
-        await _reinkarnasi_objek(mesin, data_panen, gudang, batas_asli)
+        # 5. Reinkarnasi (Fase 3) & Penjahitan Kabel (Fase 4)
+        await _reinkarnasi_objek(mesin, data_panen, gudang, batas_asli, peta_kabel_ingatan)
 
 func _tunggu_kabel_bersih(mesin, timeout_sec):
     if not mesin.has_method("get_outgoing_connections"):
         return
         
     var kabel_kabel = mesin.get_outgoing_connections()
-    # [Perbaikan 2]: Validasi Tipe Data Kabel sebelum looping
     if typeof(kabel_kabel) != TYPE_ARRAY or kabel_kabel.is_empty():
         return
 
-    # [Perbaikan 3]: Sistem Timeout agar tidak stuck selamanya jika ada bug game
     var start_time = Time.get_ticks_msec()
     for kabel in kabel_kabel:
         while kabel.get_packet_count() > 0:
@@ -94,33 +100,35 @@ func _tunggu_kabel_bersih(mesin, timeout_sec):
                 break
             await get_tree().process_frame
 
-func _reinkarnasi_objek(mesin_manual, data_panen, gudang, batas_asli):
+func _reinkarnasi_objek(mesin_manual, data_panen, gudang, batas_asli, peta_kabel_ingatan):
     if auto_collector_path == "":
         return
 
     var cetakan = load(auto_collector_path)
     var mesin_baru = cetakan.instantiate()
     
-    # Ambil metadata mesin lama
     var pos = mesin_manual.global_position
     var induk = mesin_manual.get_parent()
-    var z_indeks = mesin_manual.z_index # [Perbaikan 5: Z-Index Preservation]
+    var z_indeks = mesin_manual.z_index 
     
-    # [Perbaikan 6]: Type Casting ke Float untuk mencegah Type Mismatch saat suntikan data
     if "internal_storage" in mesin_baru:
         mesin_baru.internal_storage = float(data_panen)
     
     # Eksekusi Ganti
     mesin_manual.queue_free()
-    await get_tree().process_frame # Memberi napas pada engine untuk membersihkan memori
+    await get_tree().process_frame 
     
     induk.add_child(mesin_baru)
     mesin_baru.global_position = pos
-    mesin_baru.z_index = z_indeks # [Perbaikan 5]
+    mesin_baru.z_index = z_indeks 
     mesin_baru.name = mesin_manual.name + "_Auto"
     
     # Kembalikan limit gudang
     if gudang:
         gudang.max_storage = batas_asli
+        
+    # [INTEGRASI FASE 4]: Menjahit kembali kabel ke mesin yang baru lahir
+    if wire_mapper_node and not peta_kabel_ingatan.is_empty():
+        wire_mapper_node.jahit_kabel_baru(mesin_baru, peta_kabel_ingatan)
     
-    print("[Natan_Mod] Sukses mengganti: ", mesin_baru.name)
+    print("[Natan_Mod] Sukses mengganti dan menyambung ulang: ", mesin_baru.name)
