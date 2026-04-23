@@ -1,128 +1,126 @@
 extends Node
+
 # ==========================================
-# Natan's Auto Builder Mod - Fase 1
-# Modul: Passive State Monitor
+# Natan's Auto Builder Mod - Fase 1-3 (Integrated)
+# Modul: Passive Monitor & Adaptive Reconstructor
 # ==========================================
 
-# Variabel kontrol absolut
 var auto_collector_unlocked = false
-var is_transitioning = false # Boolean Lock (Mencegah Double-Execution Crash)
+var is_transitioning = false
+var auto_collector_path = "" # [Perbaikan 4: Dynamic Pathing]
 
 func _ready():
-    # Indikator visual di console (F12) bahwa mod berhasil di-load
     print("[Natan_Mod] Arsitektur Auto Builder berhasil diinisialisasi.")
+    _scan_direktori_auto_collector() # Menjalankan Perbaikan 4 saat start
 
 func _process(_delta):
-    # Jika mod sedang sibuk menghancurkan/mengganti node, hentikan pemindaian
     if is_transitioning:
         return
-        
-    # Memindai status pembukaan (unlock) secara terus-menerus
     if not auto_collector_unlocked:
         _pantau_research_tree()
 
+# [Perbaikan 4]: Mencari file .tscn secara dinamis agar mod tidak rusak jika game update folder
+func _scan_direktori_auto_collector():
+    var target_file = "AutoCollector.tscn"
+    var folders = ["res://Nodes/", "res://Entities/", "res://Scenes/", "res://Prefabs/"]
+    for folder in folders:
+        var path = folder + target_file
+        if ResourceLoader.exists(path):
+            auto_collector_path = path
+            print("[Natan_Mod] Path ditemukan secara dinamis: ", auto_collector_path)
+            return
+    print("[Natan_Mod] PERINGATAN: Path Auto Collector gagal ditemukan otomatis.")
+
 func _pantau_research_tree():
-    # Catatan Teknis: Kita berasumsi sistem game menggunakan Autoload bernama 'GameData' atau 'Research'
-    # Jika nama internal Upload Labs berbeda (misal 'TechTree'), kita akan ubah nanti saat tes
     if has_node("/root/GameData"):
         var game_data = get_node("/root/GameData")
-        
-        # Mengecek apakah teknologi Auto Collector gratis tersebut sudah terbuka
         if game_data.is_unlocked("tech_auto_collector"):
             auto_collector_unlocked = true
-            print("[Natan_Mod] Peringatan: Auto Collector Terbuka. Memulai Protokol Transisi...")
-            
-            # Mengunci state agar tidak terjadi eksekusi ganda
             is_transitioning = true 
-            
-            # Memanggil fungsi Fase 2 (Akan kita bangun di chat selanjutnya)
-            _inisialisasi_fase_dua()
+            print("[Natan_Mod] Peringatan: Auto Collector Terbuka. Memulai Protokol Transisi...")
+            _inisialisasi_proses_transisi()
 
-func _inisialisasi_fase_dua():
-    # Placeholder untuk skrip Pause & Harvest
-    func _inisialisasi_fase_dua():
-    print("[Natan_Mod] Fase 2 Aktif: Menjalankan protokol Pause & Harvest...")
-    _bekukan_dan_ekstrak_semua()
+func _inisialisasi_proses_transisi():
+    print("[Natan_Mod] Fase 2 & 3 Aktif: Menjalankan Adaptive Pause, Harvest & Replace...")
+    _proses_eksekusi_total()
 
-func _bekukan_dan_ekstrak_semua():
-    # Mengambil semua node yang terdaftar sebagai mesin manual di dalam game
-    # (Catatan: Kita berasumsi developer Upload Labs menggunakan grup "manual_nodes")
-    var mesin_manual = get_tree().get_nodes_in_group("manual_nodes")
-    
-    for mesin in mesin_manual:
-        # 1. Memicu Penangguhan (Pause) pada mesin tersebut
+func _proses_eksekusi_total():
+    # [Perbaikan 1]: Fallback scan jika grup manual_nodes tidak didefinisikan developer
+    var targets = get_tree().get_nodes_in_group("manual_nodes")
+    if targets.is_empty():
+        print("[Natan_Mod] Grup manual_nodes kosong, memindai manual via filter nama...")
+        # Mencari semua node di root yang mengandung kata 'Manual'
+        for node in get_tree().get_root().get_children():
+            if "Manual" in node.name:
+                targets.append(node)
+
+    for mesin in targets:
+        # Pause
         mesin.process_mode = Node.PROCESS_MODE_DISABLED
         
-        # 2. Mengamankan Paket Data di Kabel (Asinkron)
-        await _tunggu_kabel_kosong(mesin)
+        # [Perbaikan 2 & 3]: Proteksi Null dan Timeout Kabel (3 detik)
+        await _tunggu_kabel_bersih(mesin, 3.0)
         
-        # 3. Bypass Limit Gudang Sementara (Mencegah overflow)
+        # Harvest (Bypass Storage)
         var batas_asli = 0
+        var gudang = null
         if has_node("/root/GlobalDataCenter"):
-            var gudang = get_node("/root/GlobalDataCenter")
+            gudang = get_node("/root/GlobalDataCenter")
             batas_asli = gudang.max_storage
-            gudang.max_storage = INF # Bobol limit menjadi tak terhingga
-            
-        # 4. Ekstraksi Data (The Harvest)
+            gudang.max_storage = INF
+        
         var data_panen = 0
         if "internal_storage" in mesin:
             data_panen = mesin.internal_storage
         
-        print("[Natan_Mod] Mesin ", mesin.name, " dibekukan. Data diamankan: ", data_panen)
-        
-        # 5. Kembalikan limit gudang ke kondisi normal
-        if has_node("/root/GlobalDataCenter"):
-            get_node("/root/GlobalDataCenter").max_storage = batas_asli
-            
-        # 6. Memicu eksekusi Fase 3 (Akan kita rancang di tahap selanjutnya)
-        # _eksekusi_fase_tiga(mesin, data_panen)
+        # Reinkarnasi (Fase 3)
+        await _reinkarnasi_objek(mesin, data_panen, gudang, batas_asli)
 
-func _tunggu_kabel_kosong(mesin):
-    # Memastikan mesin tersebut benar-benar memiliki fungsi kabel sebelum dicek
-    if mesin.has_method("get_outgoing_connections"):
-        var kabel_kabel = mesin.get_outgoing_connections()
-        for kabel in kabel_kabel:
-            # Tahan eksekusi (looping) selama masih ada paket yang berjalan di kabel
-            while kabel.get_packet_count() > 0:
-                await get_tree().process_frame # Tunggu 1 frame game engine
-                func _eksekusi_fase_tiga(mesin_manual, data_panen):
-    print("[Natan_Mod] Fase 3 Aktif: Reinkarnasi Auto Collector untuk target ", mesin_manual.name)
-    
-    # 1. Verifikasi Direktori Blueprint
-    # Catatan Teknis: Kita memetakan path absolut dari struktur file Upload Labs.
-    var path_auto_collector = "res://Nodes/AutoCollector.tscn"
-    if not ResourceLoader.exists(path_auto_collector):
-        print("[Natan_Mod] ERROR FATAL: Blueprint Auto Collector gagal ditemukan di path ", path_auto_collector)
+func _tunggu_kabel_bersih(mesin, timeout_sec):
+    if not mesin.has_method("get_outgoing_connections"):
         return
         
-    # 2. Mencetak Mesin Baru (Instantiation)
-    var cetakan_mesin = preload("res://Nodes/AutoCollector.tscn")
-    var mesin_otomatis = cetakan_mesin.instantiate()
+    var kabel_kabel = mesin.get_outgoing_connections()
+    # [Perbaikan 2]: Validasi Tipe Data Kabel sebelum looping
+    if typeof(kabel_kabel) != TYPE_ARRAY or kabel_kabel.is_empty():
+        return
+
+    # [Perbaikan 3]: Sistem Timeout agar tidak stuck selamanya jika ada bug game
+    var start_time = Time.get_ticks_msec()
+    for kabel in kabel_kabel:
+        while kabel.get_packet_count() > 0:
+            if (Time.get_ticks_msec() - start_time) > (timeout_sec * 1000):
+                print("[Natan_Mod] Timeout kabel pada ", mesin.name, ". Memaksa lanjut.")
+                break
+            await get_tree().process_frame
+
+func _reinkarnasi_objek(mesin_manual, data_panen, gudang, batas_asli):
+    if auto_collector_path == "":
+        return
+
+    var cetakan = load(auto_collector_path)
+    var mesin_baru = cetakan.instantiate()
     
-    # 3. Mencatat Dimensi dan Ruang Waktu
-    var koordinat_asli = mesin_manual.global_position
-    var node_induk = mesin_manual.get_parent()
-    var nama_mesin_lama = mesin_manual.name
+    # Ambil metadata mesin lama
+    var pos = mesin_manual.global_position
+    var induk = mesin_manual.get_parent()
+    var z_indeks = mesin_manual.z_index # [Perbaikan 5: Z-Index Preservation]
     
-    # 4. Suntikan Data Instan (Bypass Warm-up State)
-    if "internal_storage" in mesin_otomatis:
-        mesin_otomatis.internal_storage = data_panen
-        print("[Natan_Mod] Transfer ", data_panen, " unit data berhasil disuntikkan ke mesin baru.")
-        
-    # 5. Pemusnahan Mesin Lama (The Deletion)
+    # [Perbaikan 6]: Type Casting ke Float untuk mencegah Type Mismatch saat suntikan data
+    if "internal_storage" in mesin_baru:
+        mesin_baru.internal_storage = float(data_panen)
+    
+    # Eksekusi Ganti
     mesin_manual.queue_free()
+    await get_tree().process_frame # Memberi napas pada engine untuk membersihkan memori
     
-    # 6. Menunggu 1 Frame (Memastikan memori dari queue_free benar-benar bersih)
-    await get_tree().process_frame
+    induk.add_child(mesin_baru)
+    mesin_baru.global_position = pos
+    mesin_baru.z_index = z_indeks # [Perbaikan 5]
+    mesin_baru.name = mesin_manual.name + "_Auto"
     
-    # 7. Penempatan Mesin Baru di Kanvas
-    node_induk.add_child(mesin_otomatis)
-    mesin_otomatis.global_position = koordinat_asli
+    # Kembalikan limit gudang
+    if gudang:
+        gudang.max_storage = batas_asli
     
-    # Menyamarkan identitas mesin baru agar dikenali oleh sistem game
-    mesin_otomatis.name = nama_mesin_lama + "_Auto"
-    
-    print("[Natan_Mod] Operasi Selesai! Mesin beroperasi di koordinat X:", koordinat_asli.x, " Y:", koordinat_asli.y)
-    
-    # 8. Memicu eksekusi Fase 4 (Pemetaan Port Kabel - Untuk pertemuan selanjutnya)
-    # _petakan_ulang_kabel(mesin_otomatis, daftar_kabel_lama)
+    print("[Natan_Mod] Sukses mengganti: ", mesin_baru.name)
