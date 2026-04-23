@@ -85,3 +85,44 @@ func _tunggu_kabel_kosong(mesin):
             # Tahan eksekusi (looping) selama masih ada paket yang berjalan di kabel
             while kabel.get_packet_count() > 0:
                 await get_tree().process_frame # Tunggu 1 frame game engine
+                func _eksekusi_fase_tiga(mesin_manual, data_panen):
+    print("[Natan_Mod] Fase 3 Aktif: Reinkarnasi Auto Collector untuk target ", mesin_manual.name)
+    
+    # 1. Verifikasi Direktori Blueprint
+    # Catatan Teknis: Kita memetakan path absolut dari struktur file Upload Labs.
+    var path_auto_collector = "res://Nodes/AutoCollector.tscn"
+    if not ResourceLoader.exists(path_auto_collector):
+        print("[Natan_Mod] ERROR FATAL: Blueprint Auto Collector gagal ditemukan di path ", path_auto_collector)
+        return
+        
+    # 2. Mencetak Mesin Baru (Instantiation)
+    var cetakan_mesin = preload("res://Nodes/AutoCollector.tscn")
+    var mesin_otomatis = cetakan_mesin.instantiate()
+    
+    # 3. Mencatat Dimensi dan Ruang Waktu
+    var koordinat_asli = mesin_manual.global_position
+    var node_induk = mesin_manual.get_parent()
+    var nama_mesin_lama = mesin_manual.name
+    
+    # 4. Suntikan Data Instan (Bypass Warm-up State)
+    if "internal_storage" in mesin_otomatis:
+        mesin_otomatis.internal_storage = data_panen
+        print("[Natan_Mod] Transfer ", data_panen, " unit data berhasil disuntikkan ke mesin baru.")
+        
+    # 5. Pemusnahan Mesin Lama (The Deletion)
+    mesin_manual.queue_free()
+    
+    # 6. Menunggu 1 Frame (Memastikan memori dari queue_free benar-benar bersih)
+    await get_tree().process_frame
+    
+    # 7. Penempatan Mesin Baru di Kanvas
+    node_induk.add_child(mesin_otomatis)
+    mesin_otomatis.global_position = koordinat_asli
+    
+    # Menyamarkan identitas mesin baru agar dikenali oleh sistem game
+    mesin_otomatis.name = nama_mesin_lama + "_Auto"
+    
+    print("[Natan_Mod] Operasi Selesai! Mesin beroperasi di koordinat X:", koordinat_asli.x, " Y:", koordinat_asli.y)
+    
+    # 8. Memicu eksekusi Fase 4 (Pemetaan Port Kabel - Untuk pertemuan selanjutnya)
+    # _petakan_ulang_kabel(mesin_otomatis, daftar_kabel_lama)
